@@ -29,6 +29,8 @@ h2{font-size:1.65rem}
 .letter{background:var(--paper);max-width:340px;margin:0 auto 28px;padding:26px 24px;text-align:left;box-shadow:0 12px 30px var(--shadow);transform:rotate(-1deg)}
 .letter p{font-family:'Caveat',cursive;font-size:1.55rem;line-height:1.35;margin:0 0 12px}
 .letter p:last-child{margin:0;text-align:right}
+.snd{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:14px;z-index:9;width:44px;height:44px;border:0;border-radius:50%;background:var(--paper);color:var(--ink);font-size:1.3rem;cursor:pointer;box-shadow:0 4px 12px var(--shadow)}
+.snd:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .on .shot,.on .ph{animation:develop 2.6s ease-out both}
 @keyframes develop{from{filter:brightness(2.4) saturate(0) blur(7px);opacity:.25}to{filter:none;opacity:1}}
 .btn{font:inherit;font-weight:700;font-size:1.05rem;border:0;border-radius:999px;padding:13px 30px;background:var(--accent);color:#fff;cursor:pointer;box-shadow:0 6px 16px var(--shadow);transition:transform .2s}
@@ -49,6 +51,7 @@ h2{font-size:1.65rem}
 <body>
 <div class="fx bg" id="bg" aria-hidden="true"></div>
 <div class="fx" id="party" aria-hidden="true"></div>
+<button class="snd" id="snd" aria-label="Turn the music on or off">🎵</button>
 <main class="stage" id="stage"></main>
 <div class="dots" id="dots" aria-hidden="true"></div>
 <script>
@@ -100,7 +103,67 @@ function show(n) {
   [...dotsEl.children].forEach((d, i) => d.classList.toggle("on", i === n));
   dotsEl.style.display = n === scenes.length - 1 ? "none" : "flex";
 }
-stage.addEventListener("click", e => { if (e.target.closest("[data-next]")) show(idx + 1); });
+stage.addEventListener("click", e => {
+  if (e.target.closest("[data-next]")) { if (!ac) startMusic(); show(idx + 1); }
+});
+
+/* soft music-box lullaby, made right in the browser (no audio file needed) */
+let ac, master, timer, playing = false, bar = 0, nextT = 0;
+const STEP = 0.42;
+const PROG = [
+  [261.63, 329.63, 392, 523.25, 392, 329.63, 392, 659.25],
+  [220, 261.63, 329.63, 440, 329.63, 261.63, 329.63, 523.25],
+  [174.61, 220, 261.63, 349.23, 261.63, 220, 261.63, 440],
+  [196, 246.94, 293.66, 392, 293.66, 246.94, 293.66, 493.88]
+];
+function note(f, t, vol) {
+  [[f, vol], [f * 2, vol * 0.3]].forEach(([fr, v]) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine"; o.frequency.value = fr;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 1.5);
+  });
+}
+function tick() {
+  while (nextT < ac.currentTime + 1.2) {
+    PROG[bar % 4].forEach((f, i) => note(f, nextT + i * STEP, i === 0 ? 0.2 : 0.11));
+    bar++; nextT += 8 * STEP;
+  }
+}
+function startMusic() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = 0.6;
+      const d = ac.createDelay(); d.delayTime.value = 0.34;
+      const fb = ac.createGain(); fb.gain.value = 0.35;
+      d.connect(fb); fb.connect(d);
+      master.connect(ac.destination); master.connect(d); d.connect(ac.destination);
+    }
+    ac.resume();
+    nextT = Math.max(nextT, ac.currentTime + 0.1);
+    tick();
+    clearInterval(timer);
+    timer = setInterval(tick, 300);
+    playing = true;
+    snd.textContent = "🎵";
+  } catch (err) {}
+}
+function stopMusic() {
+  clearInterval(timer);
+  if (ac) ac.suspend();
+  playing = false;
+  snd.textContent = "🔇";
+}
+const snd = document.getElementById("snd");
+snd.addEventListener("click", () => (playing ? stopMusic() : startMusic()));
+function chime() {
+  if (!playing) return;
+  [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => note(f, ac.currentTime + 0.05 + i * 0.12, 0.18));
+}
 
 /* The No button dodges, then gives up */
 const yes = document.getElementById("yes");
@@ -109,6 +172,7 @@ const labels = ["No 🙈", "Are you sure? 🥺", "Really? 😢", "Think again �
 let tries = 0;
 function celebrate() {
   show(scenes.length - 1);
+  chime();
   const box = document.getElementById("party");
   const em = ["💖", "💕", "✨", "🌸", "💗"];
   for (let i = 0; i < 40; i++) {
